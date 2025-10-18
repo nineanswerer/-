@@ -1,0 +1,2381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫画阅读器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        #app {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 顶部工具栏 */
+        .toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+        
+        .toolbar.visible {
+            transform: translateY(0);
+        }
+        
+        .toolbar button, .toolbar select {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 12px;
+            margin: 0 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .toolbar button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 自动翻页控制按钮 */
+        .auto-play-btn {
+            background: rgba(76, 175, 80, 0.3) !important;
+            border-color: #4CAF50 !important;
+        }
+
+        .auto-play-btn.playing {
+            background: rgba(76, 175, 80, 0.6) !important;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+        }
+        
+        /* 阅读区域 */
+        .reader-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .comic-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: transform 0.2s ease;
+            cursor: grab;
+        }
+        
+        .comic-image:active {
+            cursor: grabbing;
+        }
+        
+        /* 导航区域 */
+        .nav-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            pointer-events: none;
+        }
+        
+        .nav-btn {
+            width: 20%;
+            height: 100%;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            pointer-events: all;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 24px;
+        }
+        
+        .reader-container:hover .nav-btn {
+            opacity: 0.3;
+        }
+        
+        .nav-btn:hover {
+            opacity: 0.8 !important;
+        }
+        
+        /* 底部信息栏 */
+        .info-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 8px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 自动翻页状态指示器 */
+        .auto-play-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #4CAF50;
+            font-size: 12px;
+        }
+
+        .auto-play-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+        
+        /* 目录面板 */
+        .directory-panel {
+            position: fixed;
+            left: -300px;
+            top: 0;
+            bottom: 0;
+            width: 300px;
+            background: #2d2d2d;
+            transition: left 0.3s ease;
+            z-index: 2000;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .directory-panel.open {
+            left: 0;
+        }
+        
+        .chapter-list {
+            list-style: none;
+        }
+        
+        .chapter-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .chapter-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .chapter-item.active {
+            background: #007acc;
+        }
+        
+        /* 加载动画 */
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+        }
+        
+        /* 缩放指示器 */
+        .zoom-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        
+        .zoom-indicator.show {
+            opacity: 1;
+        }
+
+        /* 快捷键帮助面板 */
+        .shortcuts-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(45, 45, 45, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 25px;
+            z-index: 3000;
+            max-width: 90%;
+            width: auto;
+            min-width: 300px;
+            max-height: 90vh;
+            overflow-y: auto;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+
+        .shortcuts-panel.show {
+            display: block;
+        }
+
+        .shortcuts-panel h3 {
+            margin-bottom: 20px;
+            color: #fff;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .shortcuts-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .shortcut-key {
+            font-weight: bold;
+            color: #4CAF50;
+            font-size: 14px;
+            text-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+        }
+
+        .shortcut-action {
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .close-shortcuts {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease;
+        }
+
+        .close-shortcuts:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 阅读设置面板 */
+        .settings-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(45, 45, 45, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 25px;
+            z-index: 3000;
+            max-width: 90%;
+            width: auto;
+            min-width: 380px;
+            max-height: 90vh;
+            overflow-y: auto;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+
+        .settings-panel.show {
+            display: block;
+        }
+
+        .settings-panel h3 {
+            margin-bottom: 20px;
+            color: #fff;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .settings-category {
+            margin: 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .settings-category h4 {
+            color: #4CAF50;
+            margin-bottom: 15px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .setting-item {
+            margin: 15px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .setting-label {
+            color: #fff;
+            font-size: 14px;
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .setting-control {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            min-width: 140px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .setting-control:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+        }
+
+        .setting-description {
+            font-size: 12px;
+            color: #aaa;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        .close-settings {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease;
+        }
+
+        .close-settings:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .shortcuts-panel {
+                padding: 20px;
+                max-width: 95%;
+            }
+            
+            .shortcuts-list {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            
+            .settings-panel {
+                padding: 20px;
+                max-width: 95%;
+                min-width: 90%;
+            }
+            
+            .setting-item {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .setting-label {
+                margin-bottom: 5px;
+            }
+            
+            .setting-control {
+                min-width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .shortcuts-panel,
+            .settings-panel {
+                padding: 15px;
+            }
+            
+            .shortcuts-panel h3,
+            .settings-panel h3 {
+                font-size: 16px;
+                margin-bottom: 15px;
+            }
+            
+            .shortcut-item {
+                padding: 8px 12px;
+            }
+            
+            .shortcut-key,
+            .shortcut-action,
+            .setting-label,
+            .setting-control {
+                font-size: 13px;
+            }
+        }
+        
+        /* 连续模式样式 */
+        .reading-mode {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .continuous-container {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        
+        .continuous-page {
+            width: auto;
+            max-width: 100%;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        /* 目录遮罩层 */
+        .directory-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        
+        .directory-mask.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        /* 文件夹选择弹窗 */
+        .folder-select-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 4000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .folder-select-modal.show {
+            display: flex;
+        }
+
+        .folder-select-modal .modal-content {
+            background: #2d2d2d;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 90%;
+            width: 400px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(15px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .folder-select-modal h3 {
+            margin-bottom: 15px;
+            color: #fff;
+            font-size: 24px;
+        }
+
+        .folder-select-modal p {
+            margin-bottom: 25px;
+            color: #e0e0e0;
+            font-size: 16px;
+        }
+
+        .folder-select-modal .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .folder-select-modal button {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s ease;
+            min-width: 140px;
+        }
+
+        .folder-select-modal button:hover {
+            background: #45a049;
+        }
+
+        .folder-select-modal button.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .folder-select-modal button.secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 使用说明面板 */
+        .help-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(45, 45, 45, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 25px;
+            z-index: 3000;
+            max-width: 90%;
+            width: auto;
+            min-width: 320px;
+            max-height: 90vh;
+            overflow-y: auto;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+
+        .help-panel.show {
+            display: block;
+        }
+
+        .help-panel h3 {
+            margin-bottom: 20px;
+            color: #fff;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .help-content {
+            max-height: calc(90vh - 80px);
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .help-section {
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .help-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .help-section h4 {
+            color: #4CAF50;
+            margin-bottom: 12px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .help-section p {
+            color: #e0e0e0;
+            margin-bottom: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .help-section ul, .help-section ol {
+            color: #e0e0e0;
+            padding-left: 20px;
+            margin-bottom: 12px;
+        }
+
+        .help-section li {
+            margin-bottom: 8px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+
+        .code-block code {
+            color: #4CAF50;
+            font-size: 13px;
+            word-break: break-all;
+        }
+
+        .file-structure {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+        }
+
+        .file-structure .indent {
+            margin-left: 20px;
+        }
+
+        .close-help {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s ease;
+        }
+
+        .close-help:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .nav-btn {
+                width: 30%;
+            }
+            
+            .directory-panel {
+                width: 100%;
+                left: -100%;
+            }
+            
+            .continuous-page {
+                max-width: 100%;
+            }
+
+            .folder-select-modal .modal-content {
+                padding: 20px;
+                width: 90%;
+            }
+
+            .folder-select-modal h3 {
+                font-size: 20px;
+            }
+
+            .folder-select-modal p {
+                font-size: 14px;
+            }
+
+            .folder-select-modal .button-group {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .folder-select-modal button {
+                min-width: 100%;
+            }
+
+            .help-panel {
+                padding: 20px;
+                max-width: 95%;
+            }
+
+            .help-section h4 {
+                font-size: 15px;
+            }
+
+            .help-section p, .help-section li {
+                font-size: 13px;
+            }
+
+            .code-block, .file-structure {
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .help-panel {
+                padding: 15px;
+            }
+
+            .help-panel h3 {
+                font-size: 16px;
+                margin-bottom: 15px;
+            }
+
+            .help-section {
+                margin-bottom: 20px;
+                padding-bottom: 10px;
+            }
+
+            .help-section h4 {
+                font-size: 14px;
+                margin-bottom: 8px;
+            }
+
+            .help-section p, .help-section li {
+                font-size: 12px;
+            }
+
+            .code-block, .file-structure {
+                padding: 10px;
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部工具栏 -->
+        <div class="toolbar" id="toolbar">
+            <div class="toolbar-left">
+                <button onclick="selectFolder()">选择文件夹</button>
+                <button onclick="toggleDirectory()">目录</button>
+                <button onclick="previousChapter()">上一章</button>
+                <button onclick="nextChapter()">下一章</button>
+                <select id="readingMode" onchange="changeReadingMode(this.value)">
+                    <option value="paged">翻页模式</option>
+                    <option value="continuous">连续模式</option>
+                </select>
+                <button onclick="zoomOut()">缩小</button>
+                <button onclick="resetZoom()">重置</button>
+                <button onclick="zoomIn()">放大</button>
+            </div>
+            <div class="toolbar-right">
+                <button id="autoPlayBtn" class="auto-play-btn" onclick="toggleAutoPlay()">自动翻页</button>
+                <button onclick="showKeyboardShortcuts()">快捷键</button>
+                <button onclick="showSettings()">设置</button>
+                <button onclick="toggleFullscreen()">全屏</button>
+                <button onclick="exportBookmark()">导出书签</button>
+            </div>
+        </div>
+
+        <!-- 文件夹选择弹窗 -->
+        <div class="folder-select-modal" id="folderSelectModal">
+            <div class="modal-content">
+                <h3>漫画阅读器</h3>
+                <p>欢迎使用漫画阅读器！请选择您要阅读的漫画文件夹</p>
+                <div class="button-group">
+                    <button onclick="selectFolderFromModal()">选择文件夹</button>
+                    <button class="secondary" onclick="showHelpPanel()">使用方法</button>
+                    <button class="secondary" onclick="hideFolderSelectModal()">稍后选择</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 阅读区域 -->
+        <div class="reader-container" id="readerContainer">
+            <div class="loading" id="loading">加载中...</div>
+            
+            <!-- 翻页模式容器 -->
+            <div id="pagedMode" class="reading-mode">
+                <img class="comic-image" id="comicImage" alt="漫画页面">
+                <!-- 导航按钮 -->
+                <div class="nav-overlay">
+                    <button class="nav-btn" onclick="previousPage()">‹</button>
+                    <button class="nav-btn" onclick="nextPage()">›</button>
+                </div>
+            </div>
+            
+            <!-- 连续模式容器 -->
+            <div id="continuousMode" class="reading-mode" style="display: none;">
+                <div id="continuousContainer" class="continuous-container"></div>
+            </div>
+        </div>
+
+        <!-- 底部信息栏 -->
+        <div class="info-bar">
+            <span id="pageInfo">第 <span id="currentPage">1</span> 页 / 共 <span id="totalPages">0</span> 页</span>
+            <span id="chapterInfo">章节: <span id="currentChapter">未选择</span></span>
+            <span id="zoomInfo">缩放: <span id="zoomLevel">100%</span></span>
+            <div id="autoPlayStatus" class="auto-play-status" style="display: none;">
+                <div class="auto-play-indicator"></div>
+                <span id="autoPlayMode">自动翻页中</span>
+            </div>
+        </div>
+
+        <!-- 目录面板 -->
+        <div class="directory-panel" id="directoryPanel">
+            <h3>漫画目录</h3>
+            <div id="directoryList">
+                <!-- 目录内容将通过JavaScript动态生成 -->
+            </div>
+        </div>
+
+        <!-- 缩放指示器 -->
+        <div class="zoom-indicator" id="zoomIndicator">
+            缩放: <span id="zoomDisplay">100%</span>
+        </div>
+
+        <!-- 快捷键帮助面板 -->
+        <div class="shortcuts-panel" id="shortcutsPanel">
+            <button class="close-shortcuts" onclick="hideKeyboardShortcuts()">×</button>
+            <h3>键盘快捷键</h3>
+            <div class="shortcuts-list">
+                <div class="shortcut-item">
+                    <span class="shortcut-key">← / ↑</span>
+                    <span class="shortcut-action">上一页</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">→ / ↓ / 空格</span>
+                    <span class="shortcut-action">下一页</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">PageUp</span>
+                    <span class="shortcut-action">上一章</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">PageDown</span>
+                    <span class="shortcut-action">下一章</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">Home</span>
+                    <span class="shortcut-action">第一页</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">End</span>
+                    <span class="shortcut-action">最后一页</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">Esc</span>
+                    <span class="shortcut-action">关闭目录</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">F11</span>
+                    <span class="shortcut-action">全屏切换</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">Ctrl + +</span>
+                    <span class="shortcut-action">放大</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">Ctrl + -</span>
+                    <span class="shortcut-action">缩小</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">Ctrl + 0</span>
+                    <span class="shortcut-action">重置缩放</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">H</span>
+                    <span class="shortcut-action">显示快捷键</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">空格</span>
+                    <span class="shortcut-action">播放/暂停自动翻页</span>
+                </div>
+                <div class="shortcut-item">
+                    <span class="shortcut-key">R</span>
+                    <span class="shortcut-action">重置自动翻页</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 使用说明面板 -->
+        <div class="help-panel" id="helpPanel">
+            <button class="close-help" onclick="hideHelpPanel()">×</button>
+            <h3>漫画阅读器使用说明</h3>
+            <div class="help-content">
+                <div class="help-section">
+                    <h4>📚 快速开始</h4>
+                    <p><strong>方法一：使用现代浏览器直接打开（推荐）</strong></p>
+                    <ol>
+                        <li>使用 Chrome、Edge 或 Opera 浏览器</li>
+                        <li>直接双击打开 <code>get漫画阅读.html</code> 文件</li>
+                        <li>点击"选择文件夹"按钮</li>
+                        <li>在弹出的对话框中选择包含漫画章节的文件夹</li>
+                        <li>阅读器会自动扫描并加载所有漫画章节</li>
+                    </ol>
+                    
+                    <p><strong>方法二：通过URL参数指定路径</strong></p>
+                    <ol>
+                        <li>将HTML文件和漫画文件夹放在同一目录下</li>
+                        <li>在浏览器中打开：
+                            <div class="code-block">
+                                <code>file:///C:/Users/steam/Desktop/漫画/一人之下漫画/get漫画阅读.html?comicPath=./一人之下漫画</code>
+                            </div>
+                        </li>
+                        <li>或使用相对路径：
+                            <div class="code-block">
+                                <code>file:///路径/到/get漫画阅读.html?comicPath=./漫画文件夹</code>
+                            </div>
+                        </li>
+                    </ol>
+                    
+                    <p><strong>方法三：本地服务器（可选）</strong></p>
+                    <ol>
+                        <li>在漫画目录中启动本地服务器：
+                            <div class="code-block">
+                                <code>python -m http.server 8000</code>
+                            </div>
+                        </li>
+                        <li>访问 <code>http://localhost:8000/一人之下漫画/get漫画阅读.html</code></li>
+                    </ol>
+                </div>
+
+                <div class="help-section">
+                    <h4>🖱️ 基本操作</h4>
+                    <ul>
+                        <li><strong>翻页：</strong>点击左右导航按钮、使用方向键或空格键</li>
+                        <li><strong>缩放：</strong>使用工具栏的缩放按钮或Ctrl+滚轮</li>
+                        <li><strong>拖拽：</strong>放大后可以拖拽图片查看细节</li>
+                        <li><strong>全屏：</strong>点击全屏按钮或按F11键</li>
+                        <li><strong>目录：</strong>点击目录按钮查看所有章节</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>⌨️ 键盘快捷键</h4>
+                    <ul>
+                        <li><strong>← / ↑：</strong>上一页</li>
+                        <li><strong>→ / ↓ / 空格：</strong>下一页</li>
+                        <li><strong>PageUp：</strong>上一章</li>
+                        <li><strong>PageDown：</strong>下一章</li>
+                        <li><strong>Home：</strong>跳转到第一页</li>
+                        <li><strong>End：</strong>跳转到最后一页</li>
+                        <li><strong>Esc：</strong>关闭目录/面板</li>
+                        <li><strong>F11：</strong>切换全屏</li>
+                        <li><strong>Ctrl + +：</strong>放大</li>
+                        <li><strong>Ctrl + -：</strong>缩小</li>
+                        <li><strong>Ctrl + 0：</strong>重置缩放</li>
+                        <li><strong>H：</strong>显示快捷键帮助</li>
+                        <li><strong>R：</strong>切换自动翻页</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>📱 移动端操作</h4>
+                    <ul>
+                        <li><strong>滑动翻页：</strong>左右滑动屏幕切换页面</li>
+                        <li><strong>双指缩放：</strong>双指捏合缩放图片</li>
+                        <li><strong>点击切换工具栏：</strong>点击屏幕中间切换工具栏显示</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>⚙️ 阅读模式</h4>
+                    <ul>
+                        <li><strong>翻页模式：</strong>单页显示，适合精细阅读</li>
+                        <li><strong>连续模式：</strong>所有页面连续显示，适合快速浏览</li>
+                        <li><strong>自动翻页：</strong>设置翻页间隔自动阅读</li>
+                        <li><strong>自动滚动：</strong>连续模式下自动滚动阅读</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>📖 文件结构要求</h4>
+                    <p>漫画文件夹应按照以下结构组织：</p>
+                    <div class="file-structure">
+                        <div>漫画文件夹/</div>
+                        <div class="indent">├── 章节1/</div>
+                        <div class="indent">│   ├── 001.jpg</div>
+                        <div class="indent">│   ├── 002.jpg</div>
+                        <div class="indent">│   └── ...</div>
+                        <div class="indent">├── 章节2/</div>
+                        <div class="indent">│   ├── 001.jpg</div>
+                        <div class="indent">│   └── ...</div>
+                        <div class="indent">└── ...</div>
+                    </div>
+                    <p><strong>支持格式：</strong> JPG, JPEG, PNG, WebP</p>
+                </div>
+
+                <div class="help-section">
+                    <h4>🔧 浏览器兼容性</h4>
+                    <ul>
+                        <li><strong>推荐浏览器：</strong> Chrome, Edge, Opera</li>
+                        <li><strong>文件选择：</strong> 仅支持File System Access API的浏览器</li>
+                        <li><strong>备选方案：</strong> 通过URL参数或本地服务器加载</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>💾 数据保存</h4>
+                    <ul>
+                        <li><strong>阅读进度：</strong> 自动保存当前章节和页码</li>
+                        <li><strong>书签：</strong> 支持导出和恢复阅读位置</li>
+                        <li><strong>设置：</strong> 阅读偏好设置自动保存</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 阅读设置面板 -->
+        <div class="settings-panel" id="settingsPanel">
+            <button class="close-settings" onclick="hideSettings()">×</button>
+            <h3>阅读设置</h3>
+            
+            <div class="settings-category">
+                <h4>📖 阅读模式</h4>
+                <div class="setting-item">
+                    <span class="setting-label">默认阅读模式</span>
+                    <select class="setting-control" id="defaultReadingMode" onchange="updateSetting('defaultReadingMode', this.value)">
+                        <option value="paged">翻页模式</option>
+                        <option value="continuous">连续模式</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">默认缩放</span>
+                    <select class="setting-control" id="defaultZoom" onchange="updateSetting('defaultZoom', this.value)">
+                        <option value="fitWidth">适应宽度</option>
+                        <option value="fitHeight">适应高度</option>
+                        <option value="original">原始大小</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">页面过渡动画</span>
+                    <select class="setting-control" id="pageTransition" onchange="updateSetting('pageTransition', this.value)">
+                        <option value="slide">滑动</option>
+                        <option value="fade">淡入淡出</option>
+                        <option value="none">无动画</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="settings-category">
+                <h4>⏱️ 自动播放</h4>
+                <div class="setting-item">
+                    <span class="setting-label">自动翻页</span>
+                    <select class="setting-control" id="autoNextPage" onchange="updateSetting('autoNextPage', this.value)">
+                        <option value="false">关闭</option>
+                        <option value="true">开启</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">翻页速度(秒)</span>
+                    <input type="number" class="setting-control" id="pageTurnSpeed" min="1" max="10" value="3" onchange="updateSetting('pageTurnSpeed', this.value)">
+                    <div class="setting-description">翻页模式下自动翻页的间隔时间</div>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">滚动速度</span>
+                    <select class="setting-control" id="scrollSpeed" onchange="updateSetting('scrollSpeed', this.value)">
+                        <option value="slow">慢</option>
+                        <option value="medium">中</option>
+                        <option value="fast">快</option>
+                    </select>
+                    <div class="setting-description">连续模式下自动滚动的速度</div>
+                </div>
+            </div>
+            
+            <div class="settings-category">
+                <h4>🎨 界面与显示</h4>
+                <div class="setting-item">
+                    <span class="setting-label">背景颜色</span>
+                    <select class="setting-control" id="backgroundColor" onchange="updateSetting('backgroundColor', this.value)">
+                        <option value="#1a1a1a">深色</option>
+                        <option value="#ffffff">浅色</option>
+                        <option value="#f4ecd8">护眼</option>
+                        <option value="#000000">纯黑</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">图片质量</span>
+                    <select class="setting-control" id="imageQuality" onchange="updateSetting('imageQuality', this.value)">
+                        <option value="auto">自动</option>
+                        <option value="high">高质量</option>
+                        <option value="low">快速加载</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">工具栏自动隐藏</span>
+                    <select class="setting-control" id="autoHideToolbar" onchange="updateSetting('autoHideToolbar', this.value)">
+                        <option value="true">开启</option>
+                        <option value="false">关闭</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">显示页面信息</span>
+                    <select class="setting-control" id="showPageInfo" onchange="updateSetting('showPageInfo', this.value)">
+                        <option value="true">开启</option>
+                        <option value="false">关闭</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="settings-category">
+                <h4>⌨️ 快捷键与操作</h4>
+                <div class="setting-item">
+                    <span class="setting-label">启用快捷键</span>
+                    <select class="setting-control" id="enableShortcuts" onchange="updateSetting('enableShortcuts', this.value)">
+                        <option value="true">开启</option>
+                        <option value="false">关闭</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">启用触摸手势</span>
+                    <select class="setting-control" id="enableTouchGestures" onchange="updateSetting('enableTouchGestures', this.value)">
+                        <option value="true">开启</option>
+                        <option value="false">关闭</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <span class="setting-label">双击缩放</span>
+                    <select class="setting-control" id="doubleClickZoom" onchange="updateSetting('doubleClickZoom', this.value)">
+                        <option value="true">开启</option>
+                        <option value="false">关闭</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="setting-item">
+                <button class="setting-control" onclick="showHelpPanel(); hideSettings();" style="width: 100%; margin-top: 20px; background: #4CAF50; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">使用说明</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ComicReader {
+            constructor() {
+                this.currentChapter = '';
+                this.currentPage = 0;
+                this.totalPages = 0;
+                this.chapters = {};
+                this.zoom = 1;
+                this.readingMode = 'paged';
+                this.isDragging = false;
+                this.startX = 0;
+                this.startY = 0;
+                this.scrollLeft = 0;
+                this.scrollTop = 0;
+                
+                // 自动翻页相关属性
+                this.isAutoPlaying = false;
+                this.autoPlayTimer = null;
+                this.autoScrollAnimation = null;
+                this.lastInteractionTime = 0;
+                
+                // 文件句柄存储
+                this.fileHandles = {};
+                
+                this.init();
+            }
+            
+            init() {
+                this.bindEvents();
+                this.scanDirectory();
+                this.loadBookmark();
+                this.loadAutoPlaySettings();
+                
+                // 初始化显示工具栏
+                document.getElementById('toolbar').classList.add('visible');
+                setTimeout(() => {
+                    document.getElementById('toolbar').classList.remove('visible');
+                }, 3000);
+            }
+            
+            // 扫描目录结构
+            scanDirectory() {
+                // 尝试从URL参数获取漫画路径
+                const urlParams = new URLSearchParams(window.location.search);
+                const comicBasePath = urlParams.get('comicPath');
+                
+                if (comicBasePath) {
+                    console.log('从URL参数加载漫画:', comicBasePath);
+                    // 这里可以添加通过URL参数加载漫画的逻辑
+                }
+                
+                // 检查本地存储中是否有漫画数据
+                try {
+                    const savedChapters = localStorage.getItem('comicChapters');
+                    if (savedChapters) {
+                        this.chapters = JSON.parse(savedChapters);
+                        console.log('从本地存储加载章节数据:', this.chapters);
+                        
+                        // 加载第一个章节
+                        const firstChapter = Object.keys(this.chapters)[0];
+                        if (firstChapter) {
+                            this.loadChapter(firstChapter);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.error('加载本地存储数据失败:', error);
+                }
+                
+                // 如果没有检测到漫画，显示文件夹选择弹窗
+                setTimeout(() => {
+                    showFolderSelectModal();
+                }, 500);
+                
+                this.renderDirectory();
+            }
+
+            // 测试数据 - 用于演示
+            loadTestData() {
+                console.log('加载测试数据');
+                this.chapters = {
+                    '测试章节1': ['001.jpg', '002.jpg', '003.jpg'],
+                    '测试章节2': ['001.jpg', '002.jpg', '003.jpg', '004.jpg']
+                };
+                
+                // 保存到本地存储
+                try {
+                    localStorage.setItem('comicChapters', JSON.stringify(this.chapters));
+                } catch (error) {
+                    console.error('保存测试数据失败:', error);
+                }
+                
+                // 加载第一个章节
+                const firstChapter = Object.keys(this.chapters)[0];
+                if (firstChapter) {
+                    this.loadChapter(firstChapter);
+                }
+                
+                this.renderDirectory();
+            }
+            
+            // 生成页面列表
+            generatePageList(count) {
+                const pages = [];
+                for (let i = 1; i <= count; i++) {
+                    // 根据实际文件命名规则调整
+                    pages.push(`${i.toString().padStart(3, '0')}.jpg`);
+                }
+                return pages;
+            }
+            
+            // 渲染目录
+            renderDirectory() {
+                const directoryList = document.getElementById('directoryList');
+                directoryList.innerHTML = '';
+                
+                if (Object.keys(this.chapters).length === 0) {
+                    directoryList.innerHTML = '<div class="chapter-item">暂无章节，请选择文件夹</div>';
+                    return;
+                }
+                
+                // 按照数字顺序排序章节
+                const sortedChapters = Object.keys(this.chapters).sort((a, b) => {
+                    // 提取章节名称中的数字部分进行排序
+                    const getChapterNumber = (name) => {
+                        const match = name.match(/^(\d+)/);
+                        return match ? parseInt(match[1]) : Infinity;
+                    };
+                    return getChapterNumber(a) - getChapterNumber(b);
+                });
+                
+                sortedChapters.forEach(chapterName => {
+                    const chapterItem = document.createElement('div');
+                    chapterItem.className = 'chapter-item';
+                    if (chapterName === this.currentChapter) {
+                        chapterItem.classList.add('active');
+                    }
+                    chapterItem.textContent = chapterName;
+                    chapterItem.onclick = () => {
+                        this.loadChapter(chapterName);
+                        this.toggleDirectory();
+                    };
+                    directoryList.appendChild(chapterItem);
+                });
+            }
+            
+            // 加载章节
+            loadChapter(chapterName) {
+                if (!this.chapters[chapterName]) {
+                    console.error('章节不存在:', chapterName);
+                    return;
+                }
+                
+                console.log('加载章节:', chapterName, this.chapters[chapterName]);
+                
+                this.currentChapter = chapterName;
+                this.currentPage = 0;
+                this.totalPages = this.chapters[chapterName].length;
+                this.renderDirectory();
+                
+                if (this.readingMode === 'paged') {
+                    this.loadPage(0);
+                } else {
+                    this.loadContinuousChapter();
+                }
+                this.saveBookmark();
+            }
+            
+            // 加载页面
+            loadPage(pageIndex) {
+                if (pageIndex < 0 || pageIndex >= this.totalPages) {
+                    console.error('页面索引超出范围:', pageIndex);
+                    return;
+                }
+                
+                this.currentPage = pageIndex;
+                const imageElement = document.getElementById('comicImage');
+                const loadingElement = document.getElementById('loading');
+                
+                loadingElement.style.display = 'block';
+                imageElement.style.display = 'none';
+                
+                const imagePath = this.getImagePath(this.currentChapter, this.chapters[this.currentChapter][pageIndex]);
+                console.log('加载图片:', imagePath);
+                
+                const img = new Image();
+                img.onload = () => {
+                    console.log('图片加载成功');
+                    imageElement.src = img.src;
+                    imageElement.style.display = 'block';
+                    loadingElement.style.display = 'none';
+                    this.updatePageInfo();
+                    this.saveBookmark();
+                    
+                    // 重置缩放和位置，确保图片自适应显示
+                    this.resetZoom();
+                    this.resetImagePosition();
+                };
+                
+                img.onerror = () => {
+                    console.error('图片加载失败:', imagePath);
+                    loadingElement.textContent = '加载失败: ' + imagePath;
+                    
+                    // 尝试加载默认测试图片
+                    setTimeout(() => {
+                        this.tryLoadTestImage(imageElement, loadingElement);
+                    }, 1000);
+                };
+                
+                img.src = imagePath;
+            }
+            
+            // 尝试加载测试图片
+            tryLoadTestImage(imageElement, loadingElement) {
+                // 创建一个简单的测试图片
+                const canvas = document.createElement('canvas');
+                canvas.width = 800;
+                canvas.height = 1200;
+                const ctx = canvas.getContext('2d');
+                
+                // 绘制背景
+                ctx.fillStyle = '#2d2d2d';
+                ctx.fillRect(0, 0, 800, 1200);
+                
+                // 绘制文字
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '30px Microsoft YaHei';
+                ctx.textAlign = 'center';
+                ctx.fillText('测试页面', 400, 300);
+                ctx.font = '20px Microsoft YaHei';
+                ctx.fillText(`章节: ${this.currentChapter}`, 400, 350);
+                ctx.fillText(`页码: ${this.currentPage + 1}/${this.totalPages}`, 400, 380);
+                ctx.fillText('请选择包含实际漫画图片的文件夹', 400, 450);
+                
+                // 将canvas转换为图片URL
+                const testImageUrl = canvas.toDataURL('image/jpeg');
+                imageElement.src = testImageUrl;
+                imageElement.style.display = 'block';
+                loadingElement.style.display = 'none';
+                this.updatePageInfo();
+            }
+            
+            // 获取图片路径 - 使用第二个版本的方法
+            getImagePath(chapter, filename) {
+                // 根据实际目录结构，将文件名填充为3位数字以匹配实际文件
+                const parts = filename.split('.');
+                if (parts.length >= 2) {
+                    const num = parseInt(parts[0]);
+                    if (!isNaN(num)) {
+                        const paddedNum = num.toString().padStart(3, '0');
+                        const newFilename = `${paddedNum}.${parts.slice(1).join('.')}`;
+                        return `./${chapter}/${newFilename}`;
+                    }
+                }
+                // 如果解析失败，返回原路径
+                return `./${chapter}/${filename}`;
+            }
+            
+            // 上一页
+            previousPage() {
+                if (this.currentPage > 0) {
+                    this.loadPage(this.currentPage - 1);
+                } else {
+                    // 如果是第一页，跳转到上一章的最后一页
+                    this.previousChapterLastPage();
+                }
+            }
+            
+            // 下一页
+            nextPage() {
+                if (this.currentPage < this.totalPages - 1) {
+                    this.loadPage(this.currentPage + 1);
+                } else {
+                    // 如果是最后一页，跳转到下一章的第一页
+                    this.nextChapterFirstPage();
+                }
+            }
+            
+            // 跳转到上一章的最后一页
+            previousChapterLastPage() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex > 0) {
+                    const prevChapter = sortedChapters[currentIndex - 1];
+                    this.loadChapter(prevChapter);
+                    // 加载完成后跳转到最后一页
+                    setTimeout(() => {
+                        this.loadPage(this.totalPages - 1);
+                    }, 100);
+                }
+            }
+            
+            // 跳转到下一章的第一页
+            nextChapterFirstPage() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex < sortedChapters.length - 1) {
+                    const nextChapter = sortedChapters[currentIndex + 1];
+                    this.loadChapter(nextChapter);
+                }
+            }
+            
+            // 获取排序后的章节列表
+            getSortedChapters() {
+                return Object.keys(this.chapters).sort((a, b) => {
+                    const getChapterNumber = (name) => {
+                        const match = name.match(/^(\d+)/);
+                        return match ? parseInt(match[1]) : Infinity;
+                    };
+                    return getChapterNumber(a) - getChapterNumber(b);
+                });
+            }
+            
+            // 缩放功能
+            zoomIn() {
+                this.zoom = Math.min(this.zoom + 0.25, 3);
+                this.applyZoom();
+            }
+            
+            zoomOut() {
+                this.zoom = Math.max(this.zoom - 0.25, 0.5);
+                this.applyZoom();
+            }
+            
+            resetZoom() {
+                this.zoom = 1;
+                this.applyZoom();
+            }
+            
+            applyZoom() {
+                const imageElement = document.getElementById('comicImage');
+                imageElement.style.transform = `scale(${this.zoom})`;
+                
+                document.getElementById('zoomLevel').textContent = `${Math.round(this.zoom * 100)}%`;
+                
+                // 显示缩放提示
+                const indicator = document.getElementById('zoomIndicator');
+                document.getElementById('zoomDisplay').textContent = `${Math.round(this.zoom * 100)}%`;
+                indicator.classList.add('show');
+                setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 1000);
+            }
+            
+            // 更新页面信息
+            updatePageInfo() {
+                document.getElementById('currentPage').textContent = this.currentPage + 1;
+                document.getElementById('totalPages').textContent = this.totalPages;
+                document.getElementById('currentChapter').textContent = this.currentChapter || '未选择';
+            }
+            
+            // 切换目录面板
+            toggleDirectory() {
+                const panel = document.getElementById('directoryPanel');
+                panel.classList.toggle('open');
+                
+                // 添加遮罩层
+                if (panel.classList.contains('open')) {
+                    this.createDirectoryMask();
+                } else {
+                    this.removeDirectoryMask();
+                }
+            }
+            
+            // 创建目录遮罩层
+            createDirectoryMask() {
+                // 如果已经存在遮罩层，先移除
+                this.removeDirectoryMask();
+                
+                const mask = document.createElement('div');
+                mask.id = 'directoryMask';
+                mask.className = 'directory-mask';
+                mask.onclick = () => {
+                    this.toggleDirectory();
+                };
+                document.body.appendChild(mask);
+                
+                // 添加动画效果
+                setTimeout(() => {
+                    mask.classList.add('visible');
+                }, 10);
+            }
+            
+            // 移除目录遮罩层
+            removeDirectoryMask() {
+                const mask = document.getElementById('directoryMask');
+                if (mask) {
+                    mask.classList.remove('visible');
+                    setTimeout(() => {
+                        if (mask.parentNode) {
+                            mask.parentNode.removeChild(mask);
+                        }
+                    }, 300);
+                }
+            }
+            
+            // 切换全屏
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.error('全屏请求失败:', err);
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+            
+            // 保存书签
+            saveBookmark() {
+                const bookmark = {
+                    chapter: this.currentChapter,
+                    page: this.currentPage,
+                    zoom: this.zoom,
+                    readingMode: this.readingMode
+                };
+                try {
+                    localStorage.setItem('comicBookmark', JSON.stringify(bookmark));
+                } catch (error) {
+                    console.error('保存书签失败:', error);
+                }
+            }
+            
+            // 加载书签
+            loadBookmark() {
+                try {
+                    const bookmarkStr = localStorage.getItem('comicBookmark');
+                    if (bookmarkStr) {
+                        const bookmark = JSON.parse(bookmarkStr);
+                        if (bookmark && this.chapters[bookmark.chapter]) {
+                            this.currentChapter = bookmark.chapter;
+                            this.currentPage = bookmark.page || 0;
+                            this.zoom = bookmark.zoom || 1;
+                            this.readingMode = bookmark.readingMode || 'paged';
+                            
+                            document.getElementById('readingMode').value = this.readingMode;
+                            
+                            this.renderDirectory();
+                            this.loadChapter(this.currentChapter);
+                            setTimeout(() => {
+                                if (this.readingMode === 'paged') {
+                                    this.loadPage(this.currentPage);
+                                } else {
+                                    this.loadContinuousChapter();
+                                }
+                                this.applyZoom();
+                            }, 100);
+                        }
+                    }
+                } catch (error) {
+                    console.error('加载书签失败:', error);
+                    localStorage.removeItem('comicBookmark');
+                }
+            }
+            
+            // 上一章
+            previousChapter() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex > 0) {
+                    this.loadChapter(sortedChapters[currentIndex - 1]);
+                }
+            }
+            
+            // 下一章
+            nextChapter() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex < sortedChapters.length - 1) {
+                    this.loadChapter(sortedChapters[currentIndex + 1]);
+                }
+            }
+            
+            // 加载连续模式章节
+            loadContinuousChapter() {
+                const container = document.getElementById('continuousContainer');
+                const loadingElement = document.getElementById('loading');
+                
+                loadingElement.style.display = 'block';
+                container.innerHTML = '';
+                
+                const pages = this.chapters[this.currentChapter];
+                let loadedCount = 0;
+                const totalCount = pages.length;
+                
+                if (totalCount === 0) {
+                    loadingElement.style.display = 'none';
+                    return;
+                }
+                
+                pages.forEach((filename, index) => {
+                    const img = document.createElement('img');
+                    img.className = 'continuous-page';
+                    img.alt = `第 ${index + 1} 页`;
+                    img.loading = 'lazy'; // 懒加载优化
+                    
+                    const imagePath = this.getImagePath(this.currentChapter, filename);
+                    img.src = imagePath;
+                    
+                    img.onload = () => {
+                        loadedCount++;
+                        if (loadedCount === totalCount) {
+                            loadingElement.style.display = 'none';
+                            this.updatePageInfo();
+                        }
+                    };
+                    
+                    img.onerror = () => {
+                        loadedCount++;
+                        console.error('连续模式图片加载失败:', imagePath);
+                        img.alt = '加载失败';
+                        
+                        // 创建测试图片
+                        this.createTestImage(img, index);
+                        
+                        if (loadedCount === totalCount) {
+                            loadingElement.style.display = 'none';
+                        }
+                    };
+                    
+                    container.appendChild(img);
+                });
+                
+                container.scrollTop = 0;
+            }
+            
+            // 创建测试图片
+            createTestImage(imgElement, index) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 600;
+                canvas.height = 800;
+                const ctx = canvas.getContext('2d');
+                
+                // 绘制背景
+                ctx.fillStyle = '#2d2d2d';
+                ctx.fillRect(0, 0, 600, 800);
+                
+                // 绘制文字
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '24px Microsoft YaHei';
+                ctx.textAlign = 'center';
+                ctx.fillText('测试页面', 300, 200);
+                ctx.font = '18px Microsoft YaHei';
+                ctx.fillText(`章节: ${this.currentChapter}`, 300, 250);
+                ctx.fillText(`页码: ${index + 1}`, 300, 280);
+                
+                // 将canvas转换为图片URL
+                const testImageUrl = canvas.toDataURL('image/jpeg');
+                imgElement.src = testImageUrl;
+            }
+            
+            // 切换阅读模式
+            changeReadingMode(mode) {
+                this.readingMode = mode;
+                
+                if (mode === 'paged') {
+                    document.getElementById('pagedMode').style.display = 'block';
+                    document.getElementById('continuousMode').style.display = 'none';
+                    if (this.currentChapter) {
+                        this.loadPage(this.currentPage);
+                    }
+                } else {
+                    document.getElementById('pagedMode').style.display = 'none';
+                    document.getElementById('continuousMode').style.display = 'block';
+                    if (this.currentChapter) {
+                        this.loadContinuousChapter();
+                    }
+                }
+                
+                this.saveBookmark();
+                
+                // 重新启动自动翻页（如果正在播放）
+                if (this.isAutoPlaying) {
+                    this.stopAutoPlay();
+                    setTimeout(() => this.startAutoPlay(), 500);
+                }
+            }
+            
+            // 导出书签
+            exportBookmark() {
+                const bookmark = {
+                    chapter: this.currentChapter,
+                    page: this.currentPage,
+                    timestamp: new Date().toLocaleString(),
+                    totalPages: this.totalPages
+                };
+                try {
+                    const dataStr = JSON.stringify(bookmark, null, 2);
+                    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                    
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(dataBlob);
+                    link.download = `漫画书签_${this.currentChapter}_${this.currentPage + 1}.json`;
+                    link.click();
+                    
+                    URL.revokeObjectURL(link.href);
+                } catch (error) {
+                    console.error('导出书签失败:', error);
+                    alert('导出书签失败，请重试');
+                }
+            }
+            
+            // 自动翻页功能
+            loadAutoPlaySettings() {
+                try {
+                    const settings = JSON.parse(localStorage.getItem('readingSettings') || '{}');
+                    document.getElementById('autoNextPage').value = settings.autoNextPage || 'false';
+                    document.getElementById('pageTurnSpeed').value = settings.pageTurnSpeed || 3;
+                    document.getElementById('scrollSpeed').value = settings.scrollSpeed || 'medium';
+                } catch (error) {
+                    console.error('加载自动翻页设置失败:', error);
+                }
+            }
+            
+            toggleAutoPlay() {
+                if (this.isAutoPlaying) {
+                    this.stopAutoPlay();
+                } else {
+                    this.startAutoPlay();
+                }
+            }
+            
+            startAutoPlay() {
+                if (this.isAutoPlaying) return;
+                
+                this.isAutoPlaying = true;
+                this.updateAutoPlayUI();
+                
+                if (this.readingMode === 'paged') {
+                    this.startPagedAutoPlay();
+                } else {
+                    this.startContinuousAutoPlay();
+                }
+            }
+            
+            stopAutoPlay() {
+                this.isAutoPlaying = false;
+                this.updateAutoPlayUI();
+                
+                if (this.autoPlayTimer) {
+                    clearTimeout(this.autoPlayTimer);
+                    this.autoPlayTimer = null;
+                }
+                
+                if (this.autoScrollAnimation) {
+                    cancelAnimationFrame(this.autoScrollAnimation);
+                    this.autoScrollAnimation = null;
+                }
+            }
+            
+            startPagedAutoPlay() {
+                const delay = parseInt(document.getElementById('pageTurnSpeed').value) * 1000;
+                
+                const autoTurnPage = () => {
+                    if (!this.isAutoPlaying) return;
+                    
+                    if (this.currentPage < this.totalPages - 1) {
+                        this.nextPage();
+                        this.autoPlayTimer = setTimeout(autoTurnPage, delay);
+                    } else {
+                        // 最后一页，自动停止
+                        this.stopAutoPlay();
+                    }
+                };
+                
+                this.autoPlayTimer = setTimeout(autoTurnPage, delay);
+            }
+            
+            startContinuousAutoPlay() {
+                const container = document.getElementById('continuousContainer');
+                if (!container) {
+                    this.stopAutoPlay();
+                    return;
+                }
+                
+                const speedSetting = document.getElementById('scrollSpeed').value;
+                const scrollSpeeds = {
+                    slow: 1,
+                    medium: 5,
+                    fast: 10
+                };
+                const scrollSpeed = scrollSpeeds[speedSetting] || 15;
+                
+                const autoScroll = () => {
+                    if (!this.isAutoPlaying || !container) {
+                        this.stopAutoPlay();
+                        return;
+                    }
+                    
+                    const currentScroll = container.scrollTop;
+                    const maxScroll = container.scrollHeight - container.clientHeight;
+                    
+                    // 如果已经滚动到底部，停止自动滚动
+                    if (currentScroll >= maxScroll - 10) {
+                        this.stopAutoPlay();
+                        return;
+                    }
+                    
+                    // 平滑滚动
+                    container.scrollTop = currentScroll + scrollSpeed;
+                    this.autoScrollAnimation = requestAnimationFrame(autoScroll);
+                };
+                
+                this.autoScrollAnimation = requestAnimationFrame(autoScroll);
+            }
+            
+            updateAutoPlayUI() {
+                const autoPlayBtn = document.getElementById('autoPlayBtn');
+                const autoPlayStatus = document.getElementById('autoPlayStatus');
+                const autoPlayMode = document.getElementById('autoPlayMode');
+                
+                if (this.isAutoPlaying) {
+                    autoPlayBtn.textContent = '停止自动';
+                    autoPlayBtn.classList.add('playing');
+                    autoPlayStatus.style.display = 'flex';
+                    autoPlayMode.textContent = this.readingMode === 'paged' ? '自动翻页中' : '自动滚动中';
+                } else {
+                    autoPlayBtn.textContent = '自动翻页';
+                    autoPlayBtn.classList.remove('playing');
+                    autoPlayStatus.style.display = 'none';
+                }
+            }
+            
+            // 绑定事件
+            bindEvents() {
+                // 键盘事件
+                document.addEventListener('keydown', (e) => {
+                    // 如果正在输入，不触发翻页
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                        return;
+                    }
+                    
+                    switch(e.key) {
+                        case 'ArrowLeft':
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            this.previousPage();
+                            break;
+                        case 'ArrowRight':
+                        case 'ArrowDown':
+                        case ' ':
+                            e.preventDefault();
+                            this.nextPage();
+                            break;
+                        case 'PageUp':
+                            e.preventDefault();
+                            this.previousChapter();
+                            break;
+                        case 'PageDown':
+                            e.preventDefault();
+                            this.nextChapter();
+                            break;
+                        case 'Escape':
+                            this.toggleDirectory();
+                            hideKeyboardShortcuts();
+                            hideSettings();
+                            hideHelpPanel();
+                            break;
+                        case 'Home':
+                            e.preventDefault();
+                            this.loadPage(0);
+                            break;
+                        case 'End':
+                            e.preventDefault();
+                            this.loadPage(this.totalPages - 1);
+                            break;
+                        case 'h':
+                        case 'H':
+                            e.preventDefault();
+                            showKeyboardShortcuts();
+                            break;
+                        case 'r':
+                        case 'R':
+                            e.preventDefault();
+                            if (this.isAutoPlaying) {
+                                this.stopAutoPlay();
+                            } else {
+                                this.startAutoPlay();
+                            }
+                            break;
+                    }
+                });
+                
+                // 鼠标滚轮缩放
+                document.getElementById('comicImage').addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    if (e.ctrlKey) {
+                        if (e.deltaY < 0) {
+                            this.zoomIn();
+                        } else {
+                            this.zoomOut();
+                        }
+                    }
+                });
+                
+                // 图片拖拽
+                const imageElement = document.getElementById('comicImage');
+                let dragStartX = 0, dragStartY = 0;
+                
+                imageElement.addEventListener('mousedown', (e) => {
+                    if (this.zoom <= 1) return; // 只有放大时才允许拖拽
+                    
+                    this.isDragging = true;
+                    dragStartX = e.clientX - imageElement.offsetLeft;
+                    dragStartY = e.clientY - imageElement.offsetTop;
+                    imageElement.style.cursor = 'grabbing';
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    e.preventDefault();
+                    
+                    const x = e.clientX - dragStartX;
+                    const y = e.clientY - dragStartY;
+                    
+                    imageElement.style.position = 'absolute';
+                    imageElement.style.left = `${x}px`;
+                    imageElement.style.top = `${y}px`;
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        imageElement.style.cursor = 'grab';
+                        
+                        // 重置位置如果超出边界太多
+                        setTimeout(() => {
+                            const rect = imageElement.getBoundingClientRect();
+                            const container = document.getElementById('readerContainer');
+                            const containerRect = container.getBoundingClientRect();
+                            
+                            if (rect.right < containerRect.left + 100 || 
+                                rect.left > containerRect.right - 100 ||
+                                rect.bottom < containerRect.top + 100 || 
+                                rect.top > containerRect.bottom - 100) {
+                                this.resetImagePosition();
+                            }
+                        }, 100);
+                    }
+                });
+                
+                // 显示/隐藏工具栏
+                document.getElementById('readerContainer').addEventListener('click', (e) => {
+                    if (e.target === document.getElementById('readerContainer') || 
+                        e.target.classList.contains('nav-btn')) {
+                        return;
+                    }
+                    document.getElementById('toolbar').classList.toggle('visible');
+                });
+                
+                // 触摸事件（移动端支持）
+                let touchStartX = 0;
+                document.getElementById('readerContainer').addEventListener('touchstart', (e) => {
+                    touchStartX = e.touches[0].clientX;
+                });
+                
+                document.getElementById('readerContainer').addEventListener('touchend', (e) => {
+                    const touchEndX = e.changedTouches[0].clientX;
+                    const diff = touchStartX - touchEndX;
+                    
+                    if (Math.abs(diff) > 50) {
+                        if (diff > 0) {
+                            this.nextPage();
+                        } else {
+                            this.previousPage();
+                        }
+                    }
+                });
+                
+                // 防止目录面板点击事件冒泡
+                document.getElementById('directoryPanel').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            }
+            
+            // 重置图片位置
+            resetImagePosition() {
+                const imageElement = document.getElementById('comicImage');
+                imageElement.style.position = '';
+                imageElement.style.left = '';
+                imageElement.style.top = '';
+            }
+        }
+        
+        // 全局函数
+        let comicReader;
+        
+        function previousPage() {
+            comicReader.previousPage();
+        }
+        
+        function nextPage() {
+            comicReader.nextPage();
+        }
+        
+        function zoomIn() {
+            comicReader.zoomIn();
+        }
+        
+        function zoomOut() {
+            comicReader.zoomOut();
+        }
+        
+        function resetZoom() {
+            comicReader.resetZoom();
+            comicReader.resetImagePosition();
+        }
+        
+        function toggleDirectory() {
+            comicReader.toggleDirectory();
+        }
+        
+        function toggleFullscreen() {
+            comicReader.toggleFullscreen();
+        }
+        
+        function exportBookmark() {
+            comicReader.exportBookmark();
+        }
+        
+        function previousChapter() {
+            comicReader.previousChapter();
+        }
+        
+        function nextChapter() {
+            comicReader.nextChapter();
+        }
+        
+        function changeReadingMode(value) {
+            comicReader.changeReadingMode(value);
+        }
+        
+        function toggleAutoPlay() {
+            comicReader.toggleAutoPlay();
+        }
+        
+        // 选择文件夹函数 - 使用第二个版本的扫描逻辑
+        async function selectFolder() {
+            try {
+                // 检查浏览器是否支持File System Access API
+                if (!('showDirectoryPicker' in window)) {
+                    alert('您的浏览器不支持文件系统访问API。请使用Chrome、Edge或Opera浏览器。\n\n作为替代，我们将加载测试数据。');
+                    comicReader.loadTestData();
+                    return;
+                }
+                
+                // 显示目录选择器
+                const directoryHandle = await window.showDirectoryPicker();
+                const loadingElement = document.getElementById('loading');
+                loadingElement.style.display = 'block';
+                loadingElement.textContent = '扫描文件夹中...';
+                
+                // 使用第二个版本的扫描目录结构函数
+                const chapters = await scanDirectoryStructure(directoryHandle);
+                
+                // 更新阅读器的章节数据
+                comicReader.chapters = chapters;
+                comicReader.renderDirectory();
+                
+                // 保存到本地存储
+                try {
+                    localStorage.setItem('comicChapters', JSON.stringify(chapters));
+                } catch (error) {
+                    console.error('保存章节数据失败:', error);
+                }
+                
+                // 加载第一个章节
+                if (Object.keys(chapters).length > 0) {
+                    const firstChapter = Object.keys(chapters)[0];
+                    comicReader.loadChapter(firstChapter);
+                } else {
+                    alert('选择的文件夹中没有找到图片文件。请确保文件夹包含JPG、PNG或WebP格式的图片。');
+                }
+                
+                loadingElement.style.display = 'none';
+                
+            } catch (error) {
+                console.error('选择文件夹失败:', error);
+                if (error.name !== 'AbortError') {
+                    alert('选择文件夹失败: ' + error.message + '\n\n作为替代，我们将加载测试数据。');
+                    comicReader.loadTestData();
+                }
+            }
+        }
+        
+        // 扫描目录结构 - 使用第二个版本的函数
+        async function scanDirectoryStructure(directoryHandle) {
+            const chapters = {};
+            
+            // 遍历目录中的所有条目
+            for await (const entry of directoryHandle.values()) {
+                if (entry.kind === 'directory') {
+                    // 如果是目录，将其作为章节
+                    const chapterName = entry.name;
+                    const pages = [];
+                    
+                    try {
+                        // 遍历章节目录中的文件
+                        for await (const fileEntry of entry.values()) {
+                            if (fileEntry.kind === 'file') {
+                                const fileName = fileEntry.name.toLowerCase();
+                                // 检查是否是图片文件
+                                if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || 
+                                    fileName.endsWith('.png') || fileName.endsWith('.webp')) {
+                                    pages.push(fileEntry.name);
+                                }
+                            }
+                        }
+                        
+                        // 按数字顺序排序页面
+                        pages.sort((a, b) => {
+                            const numA = parseInt(a.match(/\d+/)?.[0]) || 0;
+                            const numB = parseInt(b.match(/\d+/)?.[0]) || 0;
+                            return numA - numB;
+                        });
+                        
+                        if (pages.length > 0) {
+                            chapters[chapterName] = pages;
+                        }
+                    } catch (error) {
+                        console.warn(`无法访问章节 ${chapterName}:`, error);
+                    }
+                }
+            }
+            
+            return chapters;
+        }
+        
+        // 显示键盘快捷键面板
+        function showKeyboardShortcuts() {
+            document.getElementById('shortcutsPanel').classList.add('show');
+        }
+
+        // 隐藏键盘快捷键面板
+        function hideKeyboardShortcuts() {
+            document.getElementById('shortcutsPanel').classList.remove('show');
+        }
+
+        // 显示设置面板
+        function showSettings() {
+            document.getElementById('settingsPanel').classList.add('show');
+            // 加载当前设置
+            loadSettings();
+            // 隐藏帮助面板
+            hideHelpPanel();
+        }
+
+        // 隐藏设置面板
+        function hideSettings() {
+            document.getElementById('settingsPanel').classList.remove('show');
+        }
+
+        // 显示帮助面板
+        function showHelpPanel() {
+            document.getElementById('helpPanel').classList.add('show');
+            hideFolderSelectModal();
+            // 隐藏设置面板
+            hideSettings();
+        }
+
+        // 隐藏帮助面板
+        function hideHelpPanel() {
+            document.getElementById('helpPanel').classList.remove('show');
+        }
+
+        // 加载设置
+        function loadSettings() {
+            try {
+                const settings = JSON.parse(localStorage.getItem('readingSettings') || '{}');
+                document.getElementById('defaultReadingMode').value = settings.defaultReadingMode || 'paged';
+                document.getElementById('defaultZoom').value = settings.defaultZoom || 'fitWidth';
+                document.getElementById('pageTransition').value = settings.pageTransition || 'slide';
+                document.getElementById('autoNextPage').value = settings.autoNextPage || 'false';
+                document.getElementById('pageTurnSpeed').value = settings.pageTurnSpeed || 3;
+                document.getElementById('scrollSpeed').value = settings.scrollSpeed || 'medium';
+                document.getElementById('backgroundColor').value = settings.backgroundColor || '#1a1a1a';
+                document.getElementById('imageQuality').value = settings.imageQuality || 'auto';
+                document.getElementById('autoHideToolbar').value = settings.autoHideToolbar || 'true';
+                document.getElementById('showPageInfo').value = settings.showPageInfo || 'true';
+                document.getElementById('enableShortcuts').value = settings.enableShortcuts || 'true';
+                document.getElementById('enableTouchGestures').value = settings.enableTouchGestures || 'true';
+                document.getElementById('doubleClickZoom').value = settings.doubleClickZoom || 'true';
+            } catch (error) {
+                console.error('加载设置失败:', error);
+            }
+        }
+
+        // 更新设置
+        function updateSetting(key, value) {
+            try {
+                const settings = JSON.parse(localStorage.getItem('readingSettings') || '{}');
+                settings[key] = value;
+                localStorage.setItem('readingSettings', JSON.stringify(settings));
+                
+                // 立即应用设置
+                applySettings(settings);
+            } catch (error) {
+                console.error('更新设置失败:', error);
+            }
+        }
+
+        // 应用设置
+        function applySettings(settings) {
+            // 应用背景颜色
+            if (settings.backgroundColor) {
+                document.body.style.background = settings.backgroundColor;
+            }
+            
+            // 应用页面信息显示设置
+            if (settings.showPageInfo === 'false') {
+                document.getElementById('pageInfo').style.display = 'none';
+                document.getElementById('chapterInfo').style.display = 'none';
+            } else {
+                document.getElementById('pageInfo').style.display = 'inline';
+                document.getElementById('chapterInfo').style.display = 'inline';
+            }
+            
+            // 应用工具栏自动隐藏设置
+            if (settings.autoHideToolbar === 'false') {
+                document.getElementById('toolbar').classList.add('visible');
+            }
+            
+            // 如果自动翻页开启且正在播放，重新启动
+            if (settings.autoNextPage === 'true' && comicReader && comicReader.isAutoPlaying) {
+                comicReader.stopAutoPlay();
+                setTimeout(() => comicReader.startAutoPlay(), 500);
+            }
+        }
+
+        // 文件夹选择弹窗相关函数
+        function showFolderSelectModal() {
+            document.getElementById('folderSelectModal').classList.add('show');
+        }
+
+        function hideFolderSelectModal() {
+            document.getElementById('folderSelectModal').classList.remove('show');
+        }
+
+        function selectFolderFromModal() {
+            hideFolderSelectModal();
+            selectFolder();
+        }
+
+        // 初始化阅读器
+        window.addEventListener('DOMContentLoaded', () => {
+            comicReader = new ComicReader();
+            
+            // 加载设置
+            try {
+                const settings = JSON.parse(localStorage.getItem('readingSettings') || '{}');
+                applySettings(settings);
+            } catch (error) {
+                console.error('初始化设置失败:', error);
+            }
+        });
+    </script>
+</body>
+</html>
