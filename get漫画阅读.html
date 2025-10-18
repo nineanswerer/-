@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫画阅读器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        #app {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 顶部工具栏 */
+        .toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+        
+        .toolbar.visible {
+            transform: translateY(0);
+        }
+        
+        .toolbar button, .toolbar select {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 8px 12px;
+            margin: 0 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .toolbar button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* 阅读区域 */
+        .reader-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .comic-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: transform 0.2s ease;
+            cursor: grab;
+        }
+        
+        .comic-image:active {
+            cursor: grabbing;
+        }
+        
+        /* 导航区域 */
+        .nav-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            pointer-events: none;
+        }
+        
+        .nav-btn {
+            width: 20%;
+            height: 100%;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            pointer-events: all;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 24px;
+        }
+        
+        .reader-container:hover .nav-btn {
+            opacity: 0.3;
+        }
+        
+        .nav-btn:hover {
+            opacity: 0.8 !important;
+        }
+        
+        /* 底部信息栏 */
+        .info-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 8px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+        
+        /* 目录面板 */
+        .directory-panel {
+            position: fixed;
+            left: -300px;
+            top: 0;
+            bottom: 0;
+            width: 300px;
+            background: #2d2d2d;
+            transition: left 0.3s ease;
+            z-index: 2000;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .directory-panel.open {
+            left: 0;
+        }
+        
+        .chapter-list {
+            list-style: none;
+        }
+        
+        .chapter-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .chapter-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .chapter-item.active {
+            background: #007acc;
+        }
+        
+        /* 加载动画 */
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+        }
+        
+        /* 缩放指示器 */
+        .zoom-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        
+        .zoom-indicator.show {
+            opacity: 1;
+        }
+        
+        /* 连续模式样式 */
+        .reading-mode {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .continuous-container {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        
+        .continuous-page {
+            width: auto;
+            max-width: 100%;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .nav-btn {
+                width: 30%;
+            }
+            
+            .directory-panel {
+                width: 100%;
+                left: -100%;
+            }
+            
+            .continuous-page {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部工具栏 -->
+        <div class="toolbar" id="toolbar">
+            <div class="toolbar-left">
+                <button onclick="selectFolder()">选择文件夹</button>
+                <button onclick="toggleDirectory()">目录</button>
+                <button onclick="previousChapter()">上一章</button>
+                <button onclick="nextChapter()">下一章</button>
+                <select id="readingMode" onchange="changeReadingMode(this.value)">
+                    <option value="paged">翻页模式</option>
+                    <option value="continuous">连续模式</option>
+                </select>
+                <button onclick="zoomOut()">缩小</button>
+                <button onclick="resetZoom()">重置</button>
+                <button onclick="zoomIn()">放大</button>
+            </div>
+            <div class="toolbar-right">
+                <button onclick="toggleFullscreen()">全屏</button>
+                <button onclick="exportBookmark()">导出书签</button>
+            </div>
+        </div>
+
+        <!-- 阅读区域 -->
+        <div class="reader-container" id="readerContainer">
+            <div class="loading" id="loading">加载中...</div>
+            
+            <!-- 翻页模式容器 -->
+            <div id="pagedMode" class="reading-mode">
+                <img class="comic-image" id="comicImage" alt="漫画页面">
+                <!-- 导航按钮 -->
+                <div class="nav-overlay">
+                    <button class="nav-btn" onclick="previousPage()">‹</button>
+                    <button class="nav-btn" onclick="nextPage()">›</button>
+                </div>
+            </div>
+            
+            <!-- 连续模式容器 -->
+            <div id="continuousMode" class="reading-mode" style="display: none;">
+                <div id="continuousContainer" class="continuous-container"></div>
+            </div>
+        </div>
+
+        <!-- 底部信息栏 -->
+        <div class="info-bar">
+            <span id="pageInfo">第 <span id="currentPage">1</span> 页 / 共 <span id="totalPages">0</span> 页</span>
+            <span id="chapterInfo">章节: <span id="currentChapter">未选择</span></span>
+            <span id="zoomInfo">缩放: <span id="zoomLevel">100%</span></span>
+        </div>
+
+        <!-- 目录面板 -->
+        <div class="directory-panel" id="directoryPanel">
+            <h3>漫画目录</h3>
+            <div id="directoryList">
+                <!-- 目录内容将通过JavaScript动态生成 -->
+            </div>
+        </div>
+
+        <!-- 缩放指示器 -->
+        <div class="zoom-indicator" id="zoomIndicator">
+            缩放: <span id="zoomDisplay">100%</span>
+        </div>
+    </div>
+
+    <script>
+        class ComicReader {
+            constructor() {
+                this.currentChapter = '';
+                this.currentPage = 0;
+                this.totalPages = 0;
+                this.chapters = {};
+                this.zoom = 1;
+                this.readingMode = 'paged';
+                this.isDragging = false;
+                this.startX = 0;
+                this.startY = 0;
+                this.scrollLeft = 0;
+                this.scrollTop = 0;
+                
+                this.init();
+            }
+            
+            init() {
+                this.bindEvents();
+                this.scanDirectory();
+                this.loadBookmark();
+            }
+            
+            // 扫描目录结构
+            scanDirectory() {
+                // 初始为空，等待用户选择文件夹
+                this.chapters = {};
+                this.renderDirectory();
+            }
+            
+            // 生成页面列表
+            generatePageList(count) {
+                const pages = [];
+                for (let i = 1; i <= count; i++) {
+                    // 根据实际文件命名规则调整
+                    pages.push(`${i}.jpg`);
+                }
+                return pages;
+            }
+            
+            // 渲染目录
+            renderDirectory() {
+                const directoryList = document.getElementById('directoryList');
+                directoryList.innerHTML = '';
+                
+                // 按照数字顺序排序章节
+                const sortedChapters = Object.keys(this.chapters).sort((a, b) => {
+                    // 提取章节名称中的数字部分进行排序
+                    const getChapterNumber = (name) => {
+                        const match = name.match(/^(\d+)/);
+                        return match ? parseInt(match[1]) : Infinity;
+                    };
+                    return getChapterNumber(a) - getChapterNumber(b);
+                });
+                
+                sortedChapters.forEach(chapterName => {
+                    const chapterItem = document.createElement('div');
+                    chapterItem.className = 'chapter-item';
+                    if (chapterName === this.currentChapter) {
+                        chapterItem.classList.add('active');
+                    }
+                    chapterItem.textContent = chapterName;
+                    chapterItem.onclick = () => {
+                        this.loadChapter(chapterName);
+                        this.toggleDirectory();
+                    };
+                    directoryList.appendChild(chapterItem);
+                });
+            }
+            
+            // 加载章节
+            loadChapter(chapterName) {
+                if (!this.chapters[chapterName]) return;
+                
+                this.currentChapter = chapterName;
+                this.currentPage = 0;
+                this.totalPages = this.chapters[chapterName].length;
+                this.renderDirectory();
+                
+                if (this.readingMode === 'paged') {
+                    this.loadPage(0);
+                } else {
+                    this.loadContinuousChapter();
+                }
+                this.saveBookmark();
+            }
+            
+            // 加载页面
+            loadPage(pageIndex) {
+                if (pageIndex < 0 || pageIndex >= this.totalPages) return;
+                
+                this.currentPage = pageIndex;
+                const imageElement = document.getElementById('comicImage');
+                const loadingElement = document.getElementById('loading');
+                
+                loadingElement.style.display = 'block';
+                imageElement.style.display = 'none';
+                
+                const imagePath = this.getImagePath(this.currentChapter, this.chapters[this.currentChapter][pageIndex]);
+                
+                const img = new Image();
+                img.onload = () => {
+                    imageElement.src = img.src;
+                    imageElement.style.display = 'block';
+                    loadingElement.style.display = 'none';
+                    this.updatePageInfo();
+                    this.saveBookmark();
+                    
+                    // 重置缩放和位置，确保图片自适应显示
+                    this.resetZoom();
+                    this.resetImagePosition();
+                };
+                
+                img.onerror = () => {
+                    loadingElement.textContent = '加载失败: ' + imagePath;
+                    console.error('图片加载失败:', imagePath);
+                    
+                    // 尝试加载下一页
+                    setTimeout(() => {
+                        if (this.currentPage < this.totalPages - 1) {
+                            this.loadPage(this.currentPage + 1);
+                        } else {
+                            loadingElement.style.display = 'none';
+                        }
+                    }, 2000);
+                };
+                
+                img.src = imagePath;
+            }
+            
+            // 获取图片路径
+            getImagePath(chapter, filename) {
+                // 根据实际目录结构，将文件名填充为3位数字以匹配实际文件
+                const parts = filename.split('.');
+                if (parts.length >= 2) {
+                    const num = parseInt(parts[0]);
+                    if (!isNaN(num)) {
+                        const paddedNum = num.toString().padStart(3, '0');
+                        const newFilename = `${paddedNum}.${parts.slice(1).join('.')}`;
+                        return `./${chapter}/${newFilename}`;
+                    }
+                }
+                // 如果解析失败，返回原路径
+                return `./${chapter}/${filename}`;
+            }
+            
+            // 上一页
+            previousPage() {
+                if (this.currentPage > 0) {
+                    this.loadPage(this.currentPage - 1);
+                } else {
+                    // 如果是第一页，跳转到上一章的最后一页
+                    this.previousChapterLastPage();
+                }
+            }
+            
+            // 下一页
+            nextPage() {
+                if (this.currentPage < this.totalPages - 1) {
+                    this.loadPage(this.currentPage + 1);
+                } else {
+                    // 如果是最后一页，跳转到下一章的第一页
+                    this.nextChapterFirstPage();
+                }
+            }
+            
+            // 跳转到上一章的最后一页
+            previousChapterLastPage() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex > 0) {
+                    const prevChapter = sortedChapters[currentIndex - 1];
+                    this.loadChapter(prevChapter);
+                    // 加载完成后跳转到最后一页
+                    setTimeout(() => {
+                        this.loadPage(this.totalPages - 1);
+                    }, 100);
+                }
+            }
+            
+            // 跳转到下一章的第一页
+            nextChapterFirstPage() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex < sortedChapters.length - 1) {
+                    const nextChapter = sortedChapters[currentIndex + 1];
+                    this.loadChapter(nextChapter);
+                }
+            }
+            
+            // 获取排序后的章节列表
+            getSortedChapters() {
+                return Object.keys(this.chapters).sort((a, b) => {
+                    const getChapterNumber = (name) => {
+                        const match = name.match(/^(\d+)/);
+                        return match ? parseInt(match[1]) : Infinity;
+                    };
+                    return getChapterNumber(a) - getChapterNumber(b);
+                });
+            }
+            
+            // 缩放功能
+            zoomIn() {
+                this.zoom = Math.min(this.zoom + 0.25, 3);
+                this.applyZoom();
+            }
+            
+            zoomOut() {
+                this.zoom = Math.max(this.zoom - 0.25, 0.5);
+                this.applyZoom();
+            }
+            
+            resetZoom() {
+                this.zoom = 1;
+                this.applyZoom();
+            }
+            
+            applyZoom() {
+                const imageElement = document.getElementById('comicImage');
+                imageElement.style.transform = `scale(${this.zoom})`;
+                
+                document.getElementById('zoomLevel').textContent = `${Math.round(this.zoom * 100)}%`;
+                
+                // 显示缩放提示
+                const indicator = document.getElementById('zoomIndicator');
+                document.getElementById('zoomDisplay').textContent = `${Math.round(this.zoom * 100)}%`;
+                indicator.classList.add('show');
+                setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 1000);
+            }
+            
+            // 更新页面信息
+            updatePageInfo() {
+                document.getElementById('currentPage').textContent = this.currentPage + 1;
+                document.getElementById('totalPages').textContent = this.totalPages;
+                document.getElementById('currentChapter').textContent = this.currentChapter;
+            }
+            
+            // 切换目录面板
+            toggleDirectory() {
+                document.getElementById('directoryPanel').classList.toggle('open');
+            }
+            
+            // 切换全屏
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.error('全屏请求失败:', err);
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+            
+            // 保存书签
+            saveBookmark() {
+                const bookmark = {
+                    chapter: this.currentChapter,
+                    page: this.currentPage,
+                    zoom: this.zoom,
+                    readingMode: this.readingMode
+                };
+                try {
+                    localStorage.setItem('comicBookmark', JSON.stringify(bookmark));
+                } catch (error) {
+                    console.error('保存书签失败:', error);
+                }
+            }
+            
+            // 加载书签
+            loadBookmark() {
+                try {
+                    const bookmarkStr = localStorage.getItem('comicBookmark');
+                    if (bookmarkStr) {
+                        const bookmark = JSON.parse(bookmarkStr);
+                        if (bookmark && this.chapters[bookmark.chapter]) {
+                            this.currentChapter = bookmark.chapter;
+                            this.currentPage = bookmark.page || 0;
+                            this.zoom = bookmark.zoom || 1;
+                            this.readingMode = bookmark.readingMode || 'paged';
+                            
+                            document.getElementById('readingMode').value = this.readingMode;
+                            
+                            this.renderDirectory();
+                            this.loadChapter(this.currentChapter);
+                            setTimeout(() => {
+                                if (this.readingMode === 'paged') {
+                                    this.loadPage(this.currentPage);
+                                } else {
+                                    this.loadContinuousChapter();
+                                }
+                                this.applyZoom();
+                            }, 100);
+                        }
+                    }
+                } catch (error) {
+                    console.error('加载书签失败:', error);
+                    localStorage.removeItem('comicBookmark');
+                }
+            }
+            
+            // 上一章
+            previousChapter() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex > 0) {
+                    this.loadChapter(sortedChapters[currentIndex - 1]);
+                }
+            }
+            
+            // 下一章
+            nextChapter() {
+                const sortedChapters = this.getSortedChapters();
+                const currentIndex = sortedChapters.indexOf(this.currentChapter);
+                if (currentIndex < sortedChapters.length - 1) {
+                    this.loadChapter(sortedChapters[currentIndex + 1]);
+                }
+            }
+            
+            // 加载连续模式章节
+            loadContinuousChapter() {
+                const container = document.getElementById('continuousContainer');
+                const loadingElement = document.getElementById('loading');
+                
+                loadingElement.style.display = 'block';
+                container.innerHTML = '';
+                
+                const pages = this.chapters[this.currentChapter];
+                let loadedCount = 0;
+                const totalCount = pages.length;
+                
+                if (totalCount === 0) {
+                    loadingElement.style.display = 'none';
+                    return;
+                }
+                
+                pages.forEach((filename, index) => {
+                    const img = document.createElement('img');
+                    img.className = 'continuous-page';
+                    img.alt = `第 ${index + 1} 页`;
+                    img.loading = 'lazy'; // 懒加载优化
+                    
+                    const imagePath = this.getImagePath(this.currentChapter, filename);
+                    img.src = imagePath;
+                    
+                    img.onload = () => {
+                        loadedCount++;
+                        if (loadedCount === totalCount) {
+                            loadingElement.style.display = 'none';
+                            this.updatePageInfo();
+                        }
+                    };
+                    
+                    img.onerror = () => {
+                        loadedCount++;
+                        console.error('连续模式图片加载失败:', imagePath);
+                        img.alt = '加载失败';
+                        if (loadedCount === totalCount) {
+                            loadingElement.style.display = 'none';
+                        }
+                    };
+                    
+                    container.appendChild(img);
+                });
+                
+                container.scrollTop = 0;
+            }
+            
+            // 切换阅读模式
+            changeReadingMode(mode) {
+                this.readingMode = mode;
+                
+                if (mode === 'paged') {
+                    document.getElementById('pagedMode').style.display = 'block';
+                    document.getElementById('continuousMode').style.display = 'none';
+                    this.loadPage(this.currentPage);
+                } else {
+                    document.getElementById('pagedMode').style.display = 'none';
+                    document.getElementById('continuousMode').style.display = 'block';
+                    this.loadContinuousChapter();
+                }
+                
+                this.saveBookmark();
+            }
+            
+            // 导出书签
+            exportBookmark() {
+                const bookmark = {
+                    chapter: this.currentChapter,
+                    page: this.currentPage,
+                    timestamp: new Date().toLocaleString(),
+                    totalPages: this.totalPages
+                };
+                try {
+                    const dataStr = JSON.stringify(bookmark, null, 2);
+                    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                    
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(dataBlob);
+                    link.download = `漫画书签_${this.currentChapter}_${this.currentPage + 1}.json`;
+                    link.click();
+                    
+                    URL.revokeObjectURL(link.href);
+                } catch (error) {
+                    console.error('导出书签失败:', error);
+                    alert('导出书签失败，请重试');
+                }
+            }
+            
+            // 绑定事件
+            bindEvents() {
+                // 键盘事件
+                document.addEventListener('keydown', (e) => {
+                    // 如果正在输入，不触发翻页
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                        return;
+                    }
+                    
+                    switch(e.key) {
+                        case 'ArrowLeft':
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            this.previousPage();
+                            break;
+                        case 'ArrowRight':
+                        case 'ArrowDown':
+                        case ' ':
+                            e.preventDefault();
+                            this.nextPage();
+                            break;
+                        case 'PageUp':
+                            e.preventDefault();
+                            this.previousChapter();
+                            break;
+                        case 'PageDown':
+                            e.preventDefault();
+                            this.nextChapter();
+                            break;
+                        case 'Escape':
+                            this.toggleDirectory();
+                            break;
+                        case 'Home':
+                            e.preventDefault();
+                            this.loadPage(0);
+                            break;
+                        case 'End':
+                            e.preventDefault();
+                            this.loadPage(this.totalPages - 1);
+                            break;
+                    }
+                });
+                
+                // 鼠标滚轮缩放
+                document.getElementById('comicImage').addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    if (e.ctrlKey) {
+                        if (e.deltaY < 0) {
+                            this.zoomIn();
+                        } else {
+                            this.zoomOut();
+                        }
+                    }
+                });
+                
+                // 图片拖拽
+                const imageElement = document.getElementById('comicImage');
+                let dragStartX = 0, dragStartY = 0;
+                
+                imageElement.addEventListener('mousedown', (e) => {
+                    if (this.zoom <= 1) return; // 只有放大时才允许拖拽
+                    
+                    this.isDragging = true;
+                    dragStartX = e.clientX - imageElement.offsetLeft;
+                    dragStartY = e.clientY - imageElement.offsetTop;
+                    imageElement.style.cursor = 'grabbing';
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    e.preventDefault();
+                    
+                    const x = e.clientX - dragStartX;
+                    const y = e.clientY - dragStartY;
+                    
+                    imageElement.style.position = 'absolute';
+                    imageElement.style.left = `${x}px`;
+                    imageElement.style.top = `${y}px`;
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        imageElement.style.cursor = 'grab';
+                        
+                        // 重置位置如果超出边界太多
+                        setTimeout(() => {
+                            const rect = imageElement.getBoundingClientRect();
+                            const container = document.getElementById('readerContainer');
+                            const containerRect = container.getBoundingClientRect();
+                            
+                            if (rect.right < containerRect.left + 100 || 
+                                rect.left > containerRect.right - 100 ||
+                                rect.bottom < containerRect.top + 100 || 
+                                rect.top > containerRect.bottom - 100) {
+                                this.resetImagePosition();
+                            }
+                        }, 100);
+                    }
+                });
+                
+                // 显示/隐藏工具栏
+                document.getElementById('readerContainer').addEventListener('click', (e) => {
+                    if (e.target === document.getElementById('readerContainer') || 
+                        e.target.classList.contains('nav-btn')) {
+                        return;
+                    }
+                    document.getElementById('toolbar').classList.toggle('visible');
+                });
+                
+                // 触摸事件（移动端支持）
+                let touchStartX = 0;
+                document.getElementById('readerContainer').addEventListener('touchstart', (e) => {
+                    touchStartX = e.touches[0].clientX;
+                });
+                
+                document.getElementById('readerContainer').addEventListener('touchend', (e) => {
+                    const touchEndX = e.changedTouches[0].clientX;
+                    const diff = touchStartX - touchEndX;
+                    
+                    if (Math.abs(diff) > 50) {
+                        if (diff > 0) {
+                            this.nextPage();
+                        } else {
+                            this.previousPage();
+                        }
+                    }
+                });
+                
+                // 防止目录面板点击事件冒泡
+                document.getElementById('directoryPanel').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            }
+            
+            // 重置图片位置
+            resetImagePosition() {
+                const imageElement = document.getElementById('comicImage');
+                imageElement.style.position = '';
+                imageElement.style.left = '';
+                imageElement.style.top = '';
+            }
+        }
+        
+        // 全局函数
+        let comicReader;
+        
+        function previousPage() {
+            comicReader.previousPage();
+        }
+        
+        function nextPage() {
+            comicReader.nextPage();
+        }
+        
+        function zoomIn() {
+            comicReader.zoomIn();
+        }
+        
+        function zoomOut() {
+            comicReader.zoomOut();
+        }
+        
+        function resetZoom() {
+            comicReader.resetZoom();
+            comicReader.resetImagePosition();
+        }
+        
+        function toggleDirectory() {
+            comicReader.toggleDirectory();
+        }
+        
+        function toggleFullscreen() {
+            comicReader.toggleFullscreen();
+        }
+        
+        function exportBookmark() {
+            comicReader.exportBookmark();
+        }
+        
+        function previousChapter() {
+            comicReader.previousChapter();
+        }
+        
+        function nextChapter() {
+            comicReader.nextChapter();
+        }
+        
+        function changeReadingMode(value) {
+            comicReader.changeReadingMode(value);
+        }
+        
+        // 选择文件夹函数 - 使用File System Access API
+        async function selectFolder() {
+            try {
+                // 检查浏览器是否支持File System Access API
+                if (!('showDirectoryPicker' in window)) {
+                    alert('您的浏览器不支持文件系统访问API。请使用Chrome、Edge或Opera浏览器。');
+                    return;
+                }
+                
+                // 显示目录选择器
+                const directoryHandle = await window.showDirectoryPicker();
+                const loadingElement = document.getElementById('loading');
+                loadingElement.style.display = 'block';
+                loadingElement.textContent = '扫描文件夹中...';
+                
+                // 扫描目录结构
+                const chapters = await scanDirectoryStructure(directoryHandle);
+                
+                // 更新阅读器的章节数据
+                comicReader.chapters = chapters;
+                comicReader.renderDirectory();
+                
+                // 加载第一个章节
+                if (Object.keys(chapters).length > 0) {
+                    const firstChapter = Object.keys(chapters)[0];
+                    comicReader.loadChapter(firstChapter);
+                }
+                
+                loadingElement.style.display = 'none';
+                
+            } catch (error) {
+                console.error('选择文件夹失败:', error);
+                if (error.name !== 'AbortError') {
+                    alert('选择文件夹失败: ' + error.message);
+                }
+            }
+        }
+        
+        // 扫描目录结构
+        async function scanDirectoryStructure(directoryHandle) {
+            const chapters = {};
+            
+            // 遍历目录中的所有条目
+            for await (const entry of directoryHandle.values()) {
+                if (entry.kind === 'directory') {
+                    // 如果是目录，将其作为章节
+                    const chapterName = entry.name;
+                    const pages = [];
+                    
+                    try {
+                        // 遍历章节目录中的文件
+                        for await (const fileEntry of entry.values()) {
+                            if (fileEntry.kind === 'file') {
+                                const fileName = fileEntry.name.toLowerCase();
+                                // 检查是否是图片文件
+                                if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || 
+                                    fileName.endsWith('.png') || fileName.endsWith('.webp')) {
+                                    pages.push(fileEntry.name);
+                                }
+                            }
+                        }
+                        
+                        // 按数字顺序排序页面
+                        pages.sort((a, b) => {
+                            const numA = parseInt(a.match(/\d+/)?.[0]) || 0;
+                            const numB = parseInt(b.match(/\d+/)?.[0]) || 0;
+                            return numA - numB;
+                        });
+                        
+                        if (pages.length > 0) {
+                            chapters[chapterName] = pages;
+                        }
+                    } catch (error) {
+                        console.warn(`无法访问章节 ${chapterName}:`, error);
+                    }
+                }
+            }
+            
+            return chapters;
+        }
+        
+        // 修改getImagePath方法以使用File System Access API
+        ComicReader.prototype.getImagePath = function(chapter, filename) {
+            // 如果已经通过File System Access API选择了文件夹，直接返回相对路径
+            return `./${chapter}/${filename}`;
+        };
+        
+        // 初始化阅读器
+        window.addEventListener('DOMContentLoaded', () => {
+            comicReader = new ComicReader();
+        });
+    </script>
+</body>
+</html>
